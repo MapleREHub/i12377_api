@@ -1,14 +1,17 @@
-# Release Please + multi-platform build + GitHub Release.
+# Release pipeline.
 #
-# 流程:
-#   1. push 到 main 后, release-please 根据 Conventional Commits 维护一个发版 PR
-#      (自动汇总 commit、生成 CHANGELOG.md、升级 Cargo.toml 版本号)
-#   2. 合并该 PR 后, release-please 创建 GitHub Release + tag (release_created=true)
-#   3. build 任务并行编译所有平台, 上传产物到 GitHub Actions artifacts
-#   4. upload 任务把产物附加到该 Release
+# Two trigger modes:
+#   1. push to main         — release-please opens/updates a release PR.
+#                              When merged, release-please creates a tag +
+#                              GitHub Release; this workflow then builds
+#                              and uploads artifacts to it.
+#   2. workflow_dispatch    — manual re-run. Always builds + uploads to the
+#                              most recent release matching the trigger's
+#                              ref. Useful for retrying a failed build
+#                              without cutting a new version.
 #
 # 注意: commit 信息需遵循 Conventional Commits (如 `feat: ...` / `fix: ...`),
-#       否则不会被收录进发版 PR.
+#       否则不会被 release-please 收录进发版 PR.
 
 name: Release
 
@@ -16,13 +19,20 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag to attach artifacts to (defaults to latest)'
+        required: false
+        default: ''
 
 permissions:
+:
   contents: write        # 创建 release / 上传产物
   pull-requests: write   # 创建发版 PR
 
 jobs:
   release-please:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.rp.outputs.release_created }}
@@ -37,21 +47,26 @@ jobs:
   # ----------------------------------------------------------------------------
   # 跨平台编译: ubuntu / windows / macos × x86_64 / aarch64
   # 模型文件 (models/common_old.onnx) 已 commit, build job 直接 checkout 即可.
+  # 触发条件:
+  #   - push 模式且 release-please 创建了 release (release_created=true)
+  #   - workflow_dispatch 模式 (手动重跑)
   # ----------------------------------------------------------------------------
   build:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && needs.release-please.outputs.release_created == 'true')
     needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest,   target: x86_64-unknown-linux-gnu,    cross: false, upx: true  }
-          - { os: ubuntu-latest,   target: aarch64-unknown-linux-gnu,   cross: true,  upx: true  }
-          - { os: windows-latest,  target: x86_64-pc-windows-msvc,     cross: false, upx: true  }
+          - { os: ubuntu-latest,   target: x86_64-unknown-linux-gnu,    upx: true  }
+          - { os: ubuntu-latest,   target: aarch64-unknown-linux-gnu,   upx: true  }
+          - { os: windows-latest,  target: x86_64-pc-windows-msvc,     upx: true  }
           # macOS: ship arm64 only — Apple retired macOS-13 (Intel) in Dec 2024
           # and `macos-latest` is now Apple Silicon. Cross-building x86_64 from
           # arm64 is unreliable and most users have moved off Intel macs.
-          - { os: macos-latest,    target: aarch64-apple-darwin,        cross: false, upx: false }
+          - { os: macos-latest,    target: aarch64-apple-darwin,        upx: false }
 
     runs-on: ${{ matrix.os }}
 
@@ -62,26 +77,20 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - uses: taiki-e/install-action@v2
-        if: matrix.cross
-        with:
-          tool: cross
-
-      - name: Install cross-linker deps (Linux)
-        if: matrix.cross && matrix.os == 'ubuntu-latest'
+      - name: Install cross-linker (aarch64-linux-gnu)
+        if: matrix.os == 'ubuntu-latest' && matrix.target == 'aarch64-unknown-linux-gnu'
         shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" \
+            >> "$GITHUB_ENV"
 
       - name: Build release
         shell: bash
         run: |
-          if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.target }}
-          else
-            cargo build --release --target ${{ matrix.target }}
-          fi
+          set -e
+          cargo build --release --target ${{ matrix.target }}
 
       - name: UPX compress
         if: matrix.upx
@@ -94,24 +103,18 @@ jobs:
           BIN_PATH="target/${{ matrix.target }}/release/${BIN}${EXT}"
           ls -la "$BIN_PATH"
 
-          if command -v upx >/dev/null 2>&1; then
-            # apt 装的 upx 对 aarch64-linux 是 x86_64 二进制, 用不了.
-            # 用 GitHub release 的多架构二进制.
-            case "${{ matrix.target }}" in
-              *aarch64*)
-                curl -fsSL -o /tmp/upx https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-arm64_linux.tar.xz
-                tar -xJf /tmp/upx -C /tmp
-                UPX_BIN="/tmp/upx-4.2.4-arm64_linux/upx"
-                ;;
-              *)
-                # windows / linux x86_64 / musl: 用 apt 的即可
-                UPX_BIN="$(command -v upx)"
-                ;;
-            esac
-            if [ -x "$UPX_BIN" ]; then
-              "$UPX_BIN" --best --lzma -f "$BIN_PATH"
-              ls -la "$BIN_PATH"
-            fi
+          if [[ "${{ matrix.target }}" == *aarch64* ]]; then
+            # apt 装的 upx 是 x86_64 的, 不能在 aarch64 runner 上跑.
+            # 但 ubuntu-latest 的 aarch64 cross 仍跑在 x86_64 runner 上,
+            # 所以 apt 的 upx 能用. windows runner 同理.
+            UPX_BIN="$(command -v upx)"
+          else
+            UPX_BIN="$(command -v upx)"
+          fi
+
+          if [ -x "$UPX_BIN" ]; then
+            "$UPX_BIN" --best --lzma -f "$BIN_PATH"
+            ls -la "$BIN_PATH"
           fi
 
       - name: Package
@@ -142,10 +145,13 @@ jobs:
           retention-days: 1
 
   # ----------------------------------------------------------------------------
-  # 把所有平台的产物上传到 release-please 创建的 GitHub Release.
+  # 把所有平台的产物上传到目标 release.
+  # tag_name 来源:
+  #   - push 模式: release-please 输出的 tag
+  #   - dispatch 模式: 用户传入的 tag_name (或默认取最新 release 的 tag)
   # ----------------------------------------------------------------------------
   upload:
-    needs: [release-please, build]
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4  # gh 命令需要 git 仓库上下文
@@ -159,7 +165,18 @@ jobs:
       - name: Attach binaries to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_INPUT: ${{ github.event.inputs.tag_name }}
+          TAG_FROM_RELEASE_PLEASE: ${{ needs.release-please.outputs.tag_name }}
         run: |
           set -e
           ls -la dist/
-          gh release upload "${{ needs.release-please.outputs.tag_name }}" dist/* --clobber
+          TAG=""
+          if [ -n "$TAG_INPUT" ]; then
+            TAG="$TAG_INPUT"
+          elif [ -n "$TAG_FROM_RELEASE_PLEASE" ]; then
+            TAG="$TAG_FROM_RELEASE_PLEASE"
+          else
+            TAG=$(gh release list --limit 1 --json tagName -q '.[0].tagName')
+          fi
+          echo "Attaching $(ls dist | wc -l) artifacts to release $TAG"
+          gh release upload "$TAG" dist/* --clobber
