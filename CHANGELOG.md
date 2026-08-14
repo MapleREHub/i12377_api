@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.3](https://github.com/MapleREHub/i12377_api/compare/v0.1.2...v0.1.3) (2026-08-14)
+
+
+### Bug Fixes
+
+* **ci:** aarch64 needs libstdc++ runtime; windows needs UPX download ([ac1f550](https://github.com/MapleREHub/i12377_api/commit/ac1f5504050b90ffc0b772b9550ec1de4e6b0279))
+* **ci:** direct aarch64-linux-gnu toolchain, add workflow_dispatch ([b53e988](https://github.com/MapleREHub/i12377_api/commit/b53e98863771288aa225836fd11a883fc38f948c))
+* **ci:** drop build's needs on release-please so dispatch works ([fe33f38](https://github.com/MapleREHub/i12377_api/commit/fe33f3856053675e00db96a808ede415e567e6fa))
+* **ci:** stray colon broke workflow YAML (workflow_dispatch not recognized) ([01ca245](https://github.com/MapleREHub/i12377_api/commit/01ca2453b73f094ce3d63dae3ba6fe80bc7db6a9))
+
 ## [0.1.2](https://github.com/MapleREHub/i12377_api/compare/v0.1.1...v0.1.2) (2026-08-14)
 
 
