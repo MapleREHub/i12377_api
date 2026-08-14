@@ -26,7 +26,6 @@ on:
         default: ''
 
 permissions:
-:
   contents: write        # 创建 release / 上传产物
   pull-requests: write   # 创建发版 PR
 
