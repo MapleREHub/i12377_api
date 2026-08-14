@@ -80,7 +80,12 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+          # libstdc++-13-dev-arm64-cross provides libstdc++.so.6 for aarch64;
+          # gcc-aarch64-linux-gnu alone ships only the linker, not the runtime.
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu \
+            libc6-dev-arm64-cross \
+            libstdc++-13-dev-arm64-cross
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" \
             >> "$GITHUB_ENV"
 
@@ -101,18 +106,34 @@ jobs:
           BIN_PATH="target/${{ matrix.target }}/release/${BIN}${EXT}"
           ls -la "$BIN_PATH"
 
-          if [[ "${{ matrix.target }}" == *aarch64* ]]; then
-            # apt 装的 upx 是 x86_64 的, 不能在 aarch64 runner 上跑.
-            # 但 ubuntu-latest 的 aarch64 cross 仍跑在 x86_64 runner 上,
-            # 所以 apt 的 upx 能用. windows runner 同理.
-            UPX_BIN="$(command -v upx)"
-          else
-            UPX_BIN="$(command -v upx)"
-          fi
+          # Locate or install UPX.
+          case "${{ matrix.os }}" in
+            ubuntu-latest)
+              if ! command -v upx >/dev/null 2>&1; then
+                sudo apt-get update
+                sudo apt-get install -y upx-ucl
+              fi
+              UPX_BIN="$(command -v upx)"
+              ;;
+            windows-latest)
+              # windows-latest doesn't ship UPX — download the win64 release.
+              mkdir -p "$RUNNER_TEMP/upx"
+              curl -fsSL \
+                -o "$RUNNER_TEMP/upx/upx.zip" \
+                https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-win64.zip
+              7z x -y "$RUNNER_TEMP/upx/upx.zip" -o"$RUNNER_TEMP/upx" >/dev/null
+              UPX_BIN="$(ls "$RUNNER_TEMP/upx"/*/upx.exe | tail -1)"
+              ;;
+            *)
+              UPX_BIN=""
+              ;;
+          esac
 
           if [ -x "$UPX_BIN" ]; then
             "$UPX_BIN" --best --lzma -f "$BIN_PATH"
             ls -la "$BIN_PATH"
+          else
+            echo "UPX not available for ${{ matrix.os }}, skipping compression"
           fi
 
       - name: Package
