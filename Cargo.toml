@@ -1,6 +1,6 @@
 [package]
 name = "i12377_api"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["MapleLeaf"]
 description = "12377 举报查询 API — Rust port with pure-Rust geometric captcha solver"

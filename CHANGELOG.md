@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/MapleREHub/i12377_api/compare/v0.1.1...v0.1.2) (2026-08-14)
+
+
+### Bug Fixes
+
+* **ci:** drop x86_64-apple-darwin (Intel macOS retired) ([a965092](https://github.com/MapleREHub/i12377_api/commit/a965092c3e4cbf45b437a6b57e2edde7d68f0cfd))
+
 ## [0.1.1](https://github.com/MapleREHub/i12377_api/compare/v0.1.0...v0.1.1) (2026-08-14)
 
 
