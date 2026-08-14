@@ -54,7 +54,6 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && needs.release-please.outputs.release_created == 'true')
-    needs: release-please
     strategy:
       fail-fast: false
       matrix:
