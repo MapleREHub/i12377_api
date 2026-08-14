@@ -1,0 +1,17 @@
+# Build artifacts
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# UPX backup (in case you ran it before committing)
+*.exe.bak

@@ -1,0 +1,53 @@
+[package]
+name = "i12377_api"
+version = "0.1.0"
+edition = "2021"
+authors = ["MapleLeaf"]
+description = "12377 举报查询 API — Rust port with pure-Rust geometric captcha solver"
+license = "MIT"
+
+[dependencies]
+# HTTP server
+axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio", "query"] }
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "net", "time", "signal", "process", "io-util"] }
+
+# HTTP client (rustls → no native-tls, smaller binary)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "json"] }
+
+# Serialization
+serde = { version = "1", default-features = false, features = ["derive"] }
+serde_json = { version = "1", default-features = false, features = ["std"] }
+
+# Image processing — PNG only
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# ONNX inference via Microsoft's onnxruntime (library, not a subprocess).
+# Tract can't handle the quantized DynamicQuantizeLSTM op in ddddocr's model.
+ort = { version = "2.0.0-rc.13", features = ["ndarray", "download-binaries", "tls-rustls"] }
+ndarray = "0.17"
+
+# Misc
+thiserror = { version = "1", default-features = false }
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+rand = "0.8"
+once_cell = { version = "1", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+
+# Aggressive release profile for minimal binary size
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+incremental = false
+
+# Smaller debug builds too
+[profile.dev]
+opt-level = 1
+debug = false
+incremental = true
